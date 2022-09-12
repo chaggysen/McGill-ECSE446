@@ -37,32 +37,48 @@ def render_checkerboard_fast(width, height, stride):
 # Deliverable 2
 #####################
 def circle(x, y):
-    # yx = np.indices((y, x))
-    # y_idx, x_idx = yx[0:2, :, :]
-    # y_idx, x_idx = yx[0, :, :], yx[1, :, :]
-    result_table = (x * x) + (y * y) - 1/4
-    result_table[result_table <= 0] = 1
-    result_table[result_table > 0] = 0
-    return result_table
+    return (x * x) + (y * y) - 1/4
 
 
 def heart(x, y):
-    result_table = (x**2 + y**2 - 1)**3 - \
+    return (x**2 + y**2 - 1)**3 - \
         (x*x * y*y*y)
-    result_table[result_table < 0] = 1
-    result_table[result_table >= 0] = 0
-    return result_table
-    # BEGIN SOLUTION
-    # END SOLUTION
 
+
+
+def NormalizeData(data):
+    return (data - np.min(data)) / (np.max(data) - np.min(data))
 
 def visibility_2d(scene_2d):
-	width, height = scene_2d["output"]["width"], scene_2d["output"]["height"]
-	yx = np.indices((height, width))
+    width, height = scene_2d["output"]["width"], scene_2d["output"]["height"]
+
+    x_min, x_max = scene_2d['view']['xmin'], scene_2d['view']['xmax']
+    y_min, y_max = scene_2d['view']['ymin'], scene_2d['view']['ymax']
+
+    # get the indices
+    yx = np.indices((height, width))
     y_idx, x_idx = yx[0:2, :, :]
     y_idx, x_idx = yx[0, :, :], yx[1, :, :]
-	output = scene_2d["shape_2d"](x_idx, y_idx)
-	return output
+
+    x_norm = NormalizeData(x_idx) - 0.5
+    y_norm = - (NormalizeData(y_idx) - 0.5)
+
+    # # normalize and transform to image coord
+    x_img_coord = x_idx - (width//2)
+    y_img_coord = -(y_idx - (height//2))
+
+    # # perform action and filter table 
+    result_table = scene_2d['shape_2d'](x_norm, y_norm)
+    # & (x_min <= x_img_coord) & (x_max >= x_img_coord) & (y_max >= y_img_coord) & (y_min <= y_img_coord)
+    result_table = np.where((result_table <= 0), 1, 0)
+    # result_table[result_table <= 0] = 1
+    # result_table[result_table > 0] = 0
+
+    return result_table
+
+
+
+
 
 
     # BEGIN SOLUTION
@@ -115,9 +131,20 @@ def heart_3d(x, y):
 
 
 def render(scene_3d):
-    pass
-    # BEGIN SOLUTION
-    # END SOLUTION
+    width, height = scene_3d['output']['width'], scene_3d['output']['height']
+
+    x_min, x_max = scene_3d['view']['xmin'], scene_3d['view']['xmax']
+    y_min, y_max = scene_3d['view']['ymin'], scene_3d['view']['ymax']
+
+    # get the indices
+    yx = np.indices((height, width))
+    y_idx, x_idx = yx[0:2, :, :]
+    y_idx, x_idx = yx[0, :, :], yx[1, :, :]
+
+    shape_3d = scene_3d['shape_3d']
+
+    z, values, normals = heart_3d(x_idx, y_idx)
+    
 
 
 # Some example test routines for the deliverables.
@@ -176,9 +203,9 @@ if __name__ == "__main__":
         plt.legend(['Naive', 'Fast'])
         plt.show()
 
-    ##########################################
-    # Deliverable 2 TESTS
-    ##########################################
+    ############################################################################################################################
+    # Deliverable 2 TESTS 
+    ############################################################################################################################
     if enabled_tests[1]:
         test_scene_2d = {
             "output": {  # output image dimensions
