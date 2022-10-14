@@ -157,8 +157,6 @@ class Scene(object):
         pixel into the scene.
         """
         # BEGIN SOLUTION
-        # np.tile, np.sum, np.where, np.arange, np.meshgrid, np.apply_along_axis, np.clip
-        # holy shit me dumb
         image_ratio = self.w / self.h
         scale = math.tan(math.radians(self.fov * 0.5))
         zc = normalize(self.at - self.eye)
@@ -177,7 +175,7 @@ class Scene(object):
         XX_flat, YY_flat, size= XX.flatten(), YY.flatten(), XX.size
         ray_direction = np.dot(cameraToWorld, np.array([XX_flat,YY_flat, np.ones(size), np.zeros(size)]))
         ray_direction = ray_direction[:3].T
-        ray_direction = np.apply_along_axis(normalize, 1, ray_direction)
+        ray_direction = list(map(normalize, ray_direction))
         return Rays(np.tile(ray_origin, (len(ray_direction),1)), ray_direction)
         # END SOLUTION
 
@@ -230,12 +228,8 @@ def shade(scene, rays):
     shadow_ray_o_offset = 1e-6
     # BEGIN SOLUTION
 
-    global hit_distances
-    global hit_normals
-    global hit_ids
-
     hit_distances, hit_normals, hit_ids = scene.intersect(rays)
-    hit_points, new_Os = [], []
+    new_Os = []
 
     def get_hit_point_and_new_origins(index):
         hit_point = rays.Os[index] + rays.Ds[index]*hit_distances[index]
@@ -245,62 +239,38 @@ def shade(scene, rays):
     indexes = np.arange(len(rays.Os))
     new_Os = np.array(list(map(get_hit_point_and_new_origins, indexes)))
 
-    # hit_distances, hit_normals, hit_ids = scene.intersect(rays)
-    # hit_points, new_Os = [], []
-    # for i in range(len(rays.Os)):
-    #     hit_point = rays.Os[i] + rays.Ds[i]*hit_distances[i]
-    #     hit_points.append(hit_point)
-    #     new_Os.append(hit_points[i]+(shadow_ray_o_offset*hit_normals[i]))
-
     Ls = []
 
     lights, spheres = scene.lights, scene.spheres
     for light in lights:
-        # global L
-        # global shadow_ids
         L = np.zeros(shape=(len(hit_distances), 3))
         direction, color = light["direction"], light["color"]
         shadow_rays = Rays(np.array(new_Os), np.tile(
             direction, (len(new_Os), 1)))
         shadow_ids = scene.intersect(shadow_rays)[2]
 
-
-        # def update_L(index):
-        #     global hit_normals
-        #     global hit_ids
-        #     global shadow_ids
-        #     global L
-            
-        #     normal, sphere_id, shadow_id = hit_normals[index], hit_ids[index], shadow_ids[index]
-        #     print(hit_normals)
-        #     print(hit_ids)
-        #     print(shadow_ids)
-        #     if sphere_id != -1:
-        #         rho = spheres[sphere_id].rho
-        #         L[index] += (rho/math.pi)*color[:3] * \
-        #                 np.maximum(0, np.dot(normal, direction))
-        #     if shadow_id != -1:
-        #         L[index] = 0
-        #     print(L)
-
-        # l_indexes = np.arange(len(hit_normals))
-        # map(update_L, l_indexes)
-        
-
-        for i in range(len(hit_normals)):
-            normal, sphere_id, shadow_id = hit_normals[i], hit_ids[i], shadow_ids[i]
+        def update_L(index):  
+            normal, sphere_id, shadow_id = hit_normals[index], hit_ids[index], shadow_ids[index]
             if sphere_id != -1:
                 rho = spheres[sphere_id].rho
-                L[i] += (rho/math.pi)*color[:3] * \
-                    np.maximum(0, np.dot(normal, direction))
+                L[index] += (rho/math.pi)*color[:3] * \
+                        np.maximum(0, np.dot(normal, direction))
             if shadow_id != -1:
-                L[i] = 0
-        # print(L)
+                L[index] = 0
+            return L
+
+        l_indexes = np.arange(len(hit_normals))
+        call = list(map(update_L, l_indexes))
         Ls.append(L)
         
+    global new_L
     new_L = np.zeros(shape=(len(hit_distances), 3))
-    for l in Ls:
-        new_L += l
+    l_iter = np.arange(len(Ls))
+    
+    def calculate_new_L(idx):
+        global new_L
+        new_L += Ls[idx]
+    call = list(map(calculate_new_L, l_iter))
     L = new_L.reshape((scene.h, scene.w, 3))
     return L
 
