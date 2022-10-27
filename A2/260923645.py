@@ -5,8 +5,12 @@
 ##########################################
 import matplotlib.pyplot as plt  # plotting
 import numpy as np  # all of numpy
-from gpytoolbox import ray_mesh_intersect, read_mesh, per_face_normals, per_vertex_normals  # for ray-mesh intersection queries
+# for ray-mesh intersection queries
+from gpytoolbox import ray_mesh_intersect, read_mesh, per_face_normals, per_vertex_normals
 ##########################################
+import math
+import random
+
 
 def normalize(v):
     """
@@ -70,6 +74,8 @@ class Geometry(object):
         return
 
 # sphere objects for our scene
+
+
 class Sphere(Geometry):
     EPSILON_SPHERE = 1e-4
 
@@ -88,15 +94,53 @@ class Sphere(Geometry):
         intersection distances (set to np.inf if none), and unit hit
         normals (set to [np.inf, np.inf, np.inf] if none.)
         """
-        distances = np.zeros((rays.Os.shape[0],), dtype=np.float64)
-        distances[:] = np.inf
-        normals = np.zeros(rays.Os.shape, dtype=np.float64)
-        normals[:,:] = np.array([np.inf, np.inf, np.inf])
+        # distances = np.zeros((rays.Os.shape[0],), dtype=np.float64)
+        # distances[:] = np.inf
+        # normals = np.zeros(rays.Os.shape, dtype=np.float64)
+        # normals[:, :] = np.array([np.inf, np.inf, np.inf])
 
-        ### BEGIN SOLUTION
-        ### END SOLUTION
+        # BEGIN SOLUTION
 
-        return distances, normals
+        def quadratic(ray_direction, ray_origin):
+            inf_distance = np.inf
+            inf_normal = np.array([np.inf, np.inf, np.inf])
+
+            sphere_center, sphere_radius = self.c, self.r
+            a = np.dot(normalize(ray_direction), normalize(ray_direction))
+            b = 2.0 * np.dot(ray_direction, (ray_origin - sphere_center))
+            c = np.dot((ray_origin - sphere_center),
+                       (ray_origin - sphere_center)) - (sphere_radius**2)
+            discriminent = b**2 - (4*a*c)
+            if discriminent < 0:
+                result = (inf_distance, inf_normal)
+            elif discriminent == 0:
+                if (-b/(2*a)) > self.EPSILON_SPHERE:
+                    distance = (-b/(2*a))
+                    point_hit = ray_origin + ray_direction*distance
+                    normal = normalize(point_hit - self.c)
+                    result = (distance, normal)
+                else:
+                    result = (inf_distance, inf_normal)
+            else:
+                t1 = (-b + math.sqrt(discriminent)) / (2*a)
+                t2 = (-b - math.sqrt(discriminent)) / (2*a)
+                if min(t1, t2) > self.EPSILON_SPHERE:
+                    distance = min(t1, t2)
+                    point_hit = ray_origin + ray_direction*distance
+                    normal = normalize(point_hit - self.c)
+                    result = (distance, normal)
+                else:
+                    result = (inf_distance, inf_normal)
+            return result
+
+        quadratic_vectorized = np.vectorize(
+            quadratic, signature='(d),(d)->()')
+
+        # same number of direction and origins
+        result = quadratic_vectorized(rays.Ds, rays.Os)
+        return result
+
+        # END SOLUTION
 
 
 # triangle mesh objects for our scene
@@ -104,20 +148,20 @@ class Mesh(Geometry):
     def __init__(self, filename, brdf_params):
         self.v, self.f = read_mesh(filename)
         self.brdf_params = brdf_params
-        ### BEGIN SOLUTION
+        # BEGIN SOLUTION
         # [TODO] replace the next line with your code for Phong normal interpolation
         # self.face_normals = per_face_normals(self.v, self.f, unit_norm = True)
-        ### END SOLUTION
+        # END SOLUTION
         super().__init__()
 
     def intersect(self, rays):
         hit_normals = np.array([np.inf, np.inf, np.inf])
         hit_distances, triangle_hit_ids, barys = ray_mesh_intersect(rays.Os, rays.Ds, self.v,
                                                                     self.f, use_embree=True)
-        ### BEGIN SOLUTION
+        # BEGIN SOLUTION
         # [TODO] replace the next line with your code for Phong normal interpolation
         # temp_normals = self.face_normals[triangle_hit_ids]
-        ### END SOLUTION
+        # END SOLUTION
 
         temp_normals = np.where((triangle_hit_ids == -1)[:, np.newaxis],
                                 hit_normals,
@@ -172,35 +216,110 @@ class Scene(object):
         pixel into the scene.
         """
 
-        ### BEGIN SOLUTION: feel free to remove any/all of our placeholder code, below
-        origins = np.zeros((self.w * self.h,3), dtype=np.float64)
-        directions = np.zeros((self.w * self.h,3), dtype=np.float64)
-        vectorized_eye_rays = Rays(origins, directions)
+        # BEGIN SOLUTION: feel free to remove any/all of our placeholder code, below
+        # origins = np.zeros((self.w * self.h, 3), dtype=np.float64)
+        # directions = np.zeros((self.w * self.h, 3), dtype=np.float64)
+        # vectorized_eye_rays = Rays(origins, directions)
 
-        return vectorized_eye_rays
-        ### END SOLUTION
+        # return vectorized_eye_rays
 
+        if jitter:
+            image_ratio = self.w / self.h
+            scale = math.tan(math.radians(self.fov * 0.5))
+            zc = normalize(self.at - self.eye)
+            ray_origin = self.eye
+            x_axis = np.cross(self.up, zc)
+            y_axis = np.cross(zc, x_axis)
+            cameraToWorld = np.array([
+                [x_axis[0], y_axis[0], zc[0], self.eye[0]],
+                [x_axis[1], y_axis[1], zc[1], self.eye[1]],
+                [x_axis[2], y_axis[2], zc[2], self.eye[2]],
+                [0, 0, 0, 1]
+            ])
+            # the 0.5 can be anything between 0 and 1
+            x = (2 * (np.arange(self.w) + random.uniform(0, 1)) /
+                 self.w - 1) * image_ratio * scale
+            y = (1 - 2 * (np.arange(self.h) + random.uniform(0, 1)) / self.h) * scale
+            XX, YY = np.meshgrid(x, y)
+            XX_flat, YY_flat, size = XX.flatten(), YY.flatten(), XX.size
+            ray_direction = np.dot(cameraToWorld, np.array(
+                [XX_flat, YY_flat, np.ones(size), np.zeros(size)]))
+            ray_direction = ray_direction[:3].T
+            ray_direction = list(map(normalize, ray_direction))
+            return Rays(np.tile(ray_origin, (len(ray_direction), 1)), ray_direction)
+
+        else:
+            image_ratio = self.w / self.h
+            scale = math.tan(math.radians(self.fov * 0.5))
+            zc = normalize(self.at - self.eye)
+            ray_origin = self.eye
+            x_axis = np.cross(self.up, zc)
+            y_axis = np.cross(zc, x_axis)
+            cameraToWorld = np.array([
+                [x_axis[0], y_axis[0], zc[0], self.eye[0]],
+                [x_axis[1], y_axis[1], zc[1], self.eye[1]],
+                [x_axis[2], y_axis[2], zc[2], self.eye[2]],
+                [0, 0, 0, 1]
+            ])
+            x = (2 * (np.arange(self.w) + 0.5) /
+                 self.w - 1) * image_ratio * scale
+            y = (1 - 2 * (np.arange(self.h) + 0.5) / self.h) * scale
+            XX, YY = np.meshgrid(x, y)
+            XX_flat, YY_flat, size = XX.flatten(), YY.flatten(), XX.size
+            ray_direction = np.dot(cameraToWorld, np.array(
+                [XX_flat, YY_flat, np.ones(size), np.zeros(size)]))
+            ray_direction = ray_direction[:3].T
+            ray_direction = list(map(normalize, ray_direction))
+            return Rays(np.tile(ray_origin, (len(ray_direction), 1)), ray_direction)
+        # END SOLUTION
 
     def intersect(self, rays):
         """
         Intersects a bundle of ray with the objects in the scene.
         Returns a tuple of hit information - hit_distances, hit_normals, hit_ids.
         """
-        hit_distances = np.zeros((rays.Os.shape[0],), dtype=np.float64)
-        hit_distances[:] = np.inf
-        hit_normals = np.zeros(rays.Os.shape, dtype=np.float64)
-        hit_normals[:,:] = np.array([np.inf, np.inf, np.inf])
-        hit_ids = np.zeros((rays.Os.shape[0],), dtype=np.int)
-        hit_ids[:] = -1
 
-        ### BEGIN SOLUTION
-        ### END SOLUTION
+        # BEGIN SOLUTION
+        # Instead of self.spheres, use self.geometries. Normals are already calculated.
+        hit_ids = []
+        hit_distances = []
+        hit_normals = []
+        global min_distance
+        min_distance = np.inf
+        global idx
+        idx = -1
+        global normal
+        normal = np.array([np.inf, np.inf, np.inf])
+
+        def check_for_geometry_hit(index):
+            global min_distance
+            global idx
+            global normal
+            min_distance = np.inf
+            idx = -1
+            normal = np.array([np.inf, np.inf, np.inf])
+            direction, origin = rays.Ds[index], rays.Os[index]
+            for geo_idx in range(len(self.geometries)):
+                geometry = self.geometries[geo_idx]
+                distance, normal = geometry.intersect(
+                    Rays(np.array([origin]), np.array([direction])))[0]
+                if distance < min_distance:
+                    min_distance = distance
+                    idx = geo_idx
+            return np.array([min_distance, np.array(normal), idx])
+
+        indexes = np.arange(len(rays.Ds))
+        result = np.array(list(map(check_for_geometry_hit, indexes))).T
+        result = result.tolist()
+        hit_distances, hit_normals, hit_ids = np.array(
+            result[0]), np.array(result[1]), np.array(result[2])
 
         return hit_distances, hit_normals, hit_ids
+        # END SOLUTION
 
     def render(self, eye_rays, sampling_type=UNIFORM_SAMPLING, num_samples=1):
         shadow_ray_o_offset = 1e-6
-        
+
         # vectorized primary visibility test
         distances, normals, ids = self.intersect(eye_rays)
 
@@ -210,20 +329,21 @@ class Scene(object):
         hit_points = eye_rays(distances)
 
         # CAREFUL! when ids == -1 (i.e., no hit), you still get valid BRDF parameters!
-        brdf_params = np.array([obj.brdf_params for obj in self.geometries])[ids]
+        brdf_params = np.array(
+            [obj.brdf_params for obj in self.geometries])[ids]
 
         # initialize the output "image" (i.e., vector; still needs to be reshaped)
         L = np.zeros(normals.shape, dtype=np.float64)
 
-        ### BEGIN SOLUTION
+        # BEGIN SOLUTION
         # PLACEHOLDER: our base code renders out normals,
         # which are useful for the first two deliverables.
-        # [TODO] Replace these next three lines with your 
+        # [TODO] Replace these next three lines with your
         # solution for deliverables 3 (and 4, for ECSE 546 students)
         L = np.abs(normals)
         L = L.reshape((self.h, self.w, 3))
         return L
-        ### END SOLUTION
+        # END SOLUTION
 
     def progressive_render_display(self, jitter=False, total_spp=20, spppp=1,
                                    sampling_type=UNIFORM_SAMPLING):
@@ -234,24 +354,29 @@ class Scene(object):
 
         L = np.zeros((self.h, self.w, 3), dtype=np.float64)
 
-        # more matplotlib voodoo: update the plot using the 
+        # more matplotlib voodoo: update the plot using the
         # image handle instead of looped imshow for performance
         image_data = plt.imshow(L)
 
-        # number of rendering iterations needed to obtain 
+        # number of rendering iterations needed to obtain
         # (at least) our total desired spp
         progressive_iters = int(np.ceil(total_spp / spppp))
 
-        ### BEGIN SOLUTION
-        # [TODO] replace the next five lines with 
+        # BEGIN SOLUTION
+        # [TODO] replace the next five lines with
         # your progressive rendering display loop
+
+        # call progressive_iters of times the function generate_eye_rays
+        # call render
+        # average all render result
+        # call image_data.set_data(averaged_L)
+
         vectorized_eye_rays = self.generate_eye_rays(jitter)
         plt.title(f"current spp: {1 * spppp} of {1 * spppp}")
         L = self.render(vectorized_eye_rays, sampling_type, spppp)
         image_data.set_data(L)
-        plt.pause(0.001) # add a tiny delay between rendering passes
-        ### END SOLUTION
-
+        plt.pause(0.001)  # add a tiny delay between rendering passes
+        # END SOLUTION
 
         plt.savefig(f"render-{progressive_iters * spppp}spp.png")
         plt.show(block=True)
@@ -261,11 +386,12 @@ if __name__ == "__main__":
     enabled_tests = [True, True, True, True]
 
     #########################################################################
-    ### Deliverable 1 TESTS Eye Ray Anti Aliasing and Progressive Rendering
+    # Deliverable 1 TESTS Eye Ray Anti Aliasing and Progressive Rendering
     #########################################################################
     if enabled_tests[0]:
         # Create test scene and test sphere
-        scene = Scene(w=int(1024 / 4), h=int(768 / 4))  # DEBUG: use a lower resolution to debug
+        # DEBUG: use a lower resolution to debug
+        scene = Scene(w=int(1024 / 4), h=int(768 / 4))
         scene.set_camera_parameters(
             eye=np.array([2, 0.5, -5], dtype=np.float64),
             at=normalize(np.array([0, 0, 1], dtype=np.float64)),
@@ -286,11 +412,12 @@ if __name__ == "__main__":
         scene.progressive_render_display(jitter=True)
 
     #########################################################################
-    ### Deliverable 2 TESTS Mesh Intersection and Phong Normal Interpolation
+    # Deliverable 2 TESTS Mesh Intersection and Phong Normal Interpolation
     #########################################################################
     if enabled_tests[1]:
         # Create test scene and test sphere
-        scene = Scene(w=int(1024 / 4), h=int(768 / 4))  # DEBUG: use a lower resolution to debug
+        # DEBUG: use a lower resolution to debug
+        scene = Scene(w=int(1024 / 4), h=int(768 / 4))
         scene.set_camera_parameters(
             eye=np.array([2, 0.5, -5], dtype=np.float64),
             at=normalize(np.array([0, 0, 1], dtype=np.float64)),
@@ -308,11 +435,12 @@ if __name__ == "__main__":
         scene.progressive_render_display(jitter=False, total_spp=1, spppp=1)
 
     ###########################################################################
-    ### Deliverable 3 TESTS Ambient Occlusion with Uniform Importance Sampling
+    # Deliverable 3 TESTS Ambient Occlusion with Uniform Importance Sampling
     ###########################################################################
     if enabled_tests[2]:
         # Create test scene and test sphere
-        scene = Scene(w=int(1024 / 4), h=int(768 / 4))  # DEBUG: use a lower resolution to debug
+        # DEBUG: use a lower resolution to debug
+        scene = Scene(w=int(1024 / 4), h=int(768 / 4))
         scene.set_camera_parameters(
             eye=np.array([2, 0.5, -5], dtype=np.float64),
             at=normalize(np.array([0, 0, 1], dtype=np.float64)),
@@ -342,11 +470,12 @@ if __name__ == "__main__":
                                          sampling_type=UNIFORM_SAMPLING)
 
     #########################################################################################
-    ### ECSE 546 Only: Deliverable 4 TESTS Ambient Occlusion with Cosine Importance Sampling
+    # ECSE 546 Only: Deliverable 4 TESTS Ambient Occlusion with Cosine Importance Sampling
     #########################################################################################
     if enabled_tests[3]:
         # Create test scene and test sphere
-        scene = Scene(w=int(1024 / 4), h=int(768 / 4))  # DEBUG: use a lower resolution to debug
+        # DEBUG: use a lower resolution to debug
+        scene = Scene(w=int(1024 / 4), h=int(768 / 4))
         scene.set_camera_parameters(
             eye=np.array([2, 0.5, -5], dtype=np.float64),
             at=normalize(np.array([0, 0, 1], dtype=np.float64)),

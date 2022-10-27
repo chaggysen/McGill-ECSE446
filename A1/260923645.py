@@ -82,11 +82,13 @@ class Sphere(object):
             if discriminent < 0:
                 result = np.inf
             elif discriminent == 0:
-                result = (-b/(2*a)) if (-b/(2*a)) > self.EPSILON_SPHERE else np.inf
+                result = (-b/(2*a)) if (-b/(2*a)
+                                        ) > self.EPSILON_SPHERE else np.inf
             else:
                 t1 = (-b + math.sqrt(discriminent)) / (2*a)
                 t2 = (-b - math.sqrt(discriminent)) / (2*a)
-                result = (min(t1, t2)) if (min(t1, t2)) > self.EPSILON_SPHERE else np.inf
+                result = (min(t1, t2)) if (
+                    min(t1, t2)) > self.EPSILON_SPHERE else np.inf
             return result
 
         quadratic_vectorized = np.vectorize(
@@ -96,13 +98,13 @@ class Sphere(object):
         if len(rays.Ds) == len(rays.Os):
             result = quadratic_vectorized(rays.Ds, rays.Os)
             return result
-        
+
         # one direction only and multiple origins
         elif len(rays.Ds) == 1:
             populated_directions = np.tile(rays.Ds, (len(rays.Os), 1))
             result = quadratic_vectorized(populated_directions, rays.Os)
             return result
-        
+
         # one origins and multiple direction
         elif len(rays.Os) == 1:
             populated_origins = np.tile(rays.Os, (len(rays.Ds), 1))
@@ -172,11 +174,12 @@ class Scene(object):
         x = (2 * (np.arange(self.w) + 0.5) / self.w - 1) * image_ratio * scale
         y = (1 - 2 * (np.arange(self.h) + 0.5) / self.h) * scale
         XX, YY = np.meshgrid(x, y)
-        XX_flat, YY_flat, size= XX.flatten(), YY.flatten(), XX.size
-        ray_direction = np.dot(cameraToWorld, np.array([XX_flat,YY_flat, np.ones(size), np.zeros(size)]))
+        XX_flat, YY_flat, size = XX.flatten(), YY.flatten(), XX.size
+        ray_direction = np.dot(cameraToWorld, np.array(
+            [XX_flat, YY_flat, np.ones(size), np.zeros(size)]))
         ray_direction = ray_direction[:3].T
         ray_direction = list(map(normalize, ray_direction))
-        return Rays(np.tile(ray_origin, (len(ray_direction),1)), ray_direction)
+        return Rays(np.tile(ray_origin, (len(ray_direction), 1)), ray_direction)
         # END SOLUTION
 
     def intersect(self, rays):
@@ -192,7 +195,7 @@ class Scene(object):
         global idx
         idx = -1
         global normal
-        normal = np.array([np.inf, np.inf, np.inf])      
+        normal = np.array([np.inf, np.inf, np.inf])
 
         # BEGIN SOLUTION
 
@@ -218,7 +221,8 @@ class Scene(object):
         indexes = np.arange(len(rays.Ds))
         result = np.array(list(map(check_for_sphere_hit, indexes))).T
         result = result.tolist()
-        hit_distances, hit_normals, hit_ids= np.array(result[0]), np.array(result[1]), np.array(result[2])
+        hit_distances, hit_normals, hit_ids = np.array(
+            result[0]), np.array(result[1]), np.array(result[2])
         return hit_distances, hit_normals, hit_ids
         # END SOLUTION
 
@@ -249,12 +253,12 @@ def shade(scene, rays):
             direction, (len(new_Os), 1)))
         shadow_ids = scene.intersect(shadow_rays)[2]
 
-        def update_L(index):  
+        def update_L(index):
             normal, sphere_id, shadow_id = hit_normals[index], hit_ids[index], shadow_ids[index]
             if sphere_id != -1:
                 rho = spheres[sphere_id].rho
                 L[index] += (rho/math.pi)*color[:3] * \
-                        np.maximum(0, np.dot(normal, direction))
+                    np.maximum(0, np.dot(normal, direction))
             if shadow_id != -1:
                 L[index] = 0
             return L
@@ -262,11 +266,11 @@ def shade(scene, rays):
         l_indexes = np.arange(len(hit_normals))
         call = list(map(update_L, l_indexes))
         Ls.append(L)
-        
+
     global new_L
     new_L = np.zeros(shape=(len(hit_distances), 3))
     l_iter = np.arange(len(Ls))
-    
+
     def calculate_new_L(idx):
         global new_L
         new_L += Ls[idx]
