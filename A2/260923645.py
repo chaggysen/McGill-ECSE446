@@ -134,9 +134,10 @@ class Sphere(Geometry):
             return result
 
         quadratic_vectorized = np.vectorize(
-            quadratic, signature='(d),(d)->()')
+            quadratic, signature='(d),(d)->(),(d)')
 
         # same number of direction and origins
+
         result = quadratic_vectorized(rays.Ds, rays.Os)
         return result
 
@@ -160,6 +161,8 @@ class Mesh(Geometry):
                                                                     self.f, use_embree=True)
         # BEGIN SOLUTION
         # [TODO] replace the next line with your code for Phong normal interpolation
+        N = per_vertex_normals(self.v, self.f)
+        print(N.shape)
         # temp_normals = self.face_normals[triangle_hit_ids]
         # END SOLUTION
 
@@ -246,7 +249,7 @@ class Scene(object):
                 [XX_flat, YY_flat, np.ones(size), np.zeros(size)]))
             ray_direction = ray_direction[:3].T
             ray_direction = list(map(normalize, ray_direction))
-            return Rays(np.tile(ray_origin, (len(ray_direction), 1)), ray_direction)
+            return Rays(np.tile(ray_origin, (len(ray_direction), 1)), np.array(ray_direction))
 
         else:
             image_ratio = self.w / self.h
@@ -270,7 +273,7 @@ class Scene(object):
                 [XX_flat, YY_flat, np.ones(size), np.zeros(size)]))
             ray_direction = ray_direction[:3].T
             ray_direction = list(map(normalize, ray_direction))
-            return Rays(np.tile(ray_origin, (len(ray_direction), 1)), ray_direction)
+            return Rays(np.tile(ray_origin, (len(ray_direction), 1)), np.array(ray_direction))
         # END SOLUTION
 
     def intersect(self, rays):
@@ -301,11 +304,13 @@ class Scene(object):
             direction, origin = rays.Ds[index], rays.Os[index]
             for geo_idx in range(len(self.geometries)):
                 geometry = self.geometries[geo_idx]
-                distance, normal = geometry.intersect(
-                    Rays(np.array([origin]), np.array([direction])))[0]
+                result = geometry.intersect(
+                    Rays(np.array([origin]), np.array([direction])))
+                distance = result[0]
                 if distance < min_distance:
                     min_distance = distance
                     idx = geo_idx
+                    normal = result[1][0]
             return np.array([min_distance, np.array(normal), idx])
 
         indexes = np.arange(len(rays.Ds))
@@ -313,7 +318,6 @@ class Scene(object):
         result = result.tolist()
         hit_distances, hit_normals, hit_ids = np.array(
             result[0]), np.array(result[1]), np.array(result[2])
-
         return hit_distances, hit_normals, hit_ids
         # END SOLUTION
 
@@ -366,16 +370,21 @@ class Scene(object):
         # [TODO] replace the next five lines with
         # your progressive rendering display loop
 
-        # call progressive_iters of times the function generate_eye_rays
-        # call render
-        # average all render result
+        for i in range(progressive_iters):
+            vectorized_eye_rays = self.generate_eye_rays(jitter)
+            L -= L/(i+1)
+            L += self.render(vectorized_eye_rays, sampling_type, spppp)/(i+1)
+            image_data.set_data(L)
+            plt.pause(0.001)
+
+        # print(L)
         # call image_data.set_data(averaged_L)
 
-        vectorized_eye_rays = self.generate_eye_rays(jitter)
-        plt.title(f"current spp: {1 * spppp} of {1 * spppp}")
-        L = self.render(vectorized_eye_rays, sampling_type, spppp)
-        image_data.set_data(L)
-        plt.pause(0.001)  # add a tiny delay between rendering passes
+        # vectorized_eye_rays = self.generate_eye_rays(jitter)
+        # plt.title(f"current spp: {1 * spppp} of {1 * spppp}")
+        # L = self.render(vectorized_eye_rays, sampling_type, spppp)
+        # image_data.set_data(L)
+        # plt.pause(0.001)  # add a tiny delay between rendering passes
         # END SOLUTION
 
         plt.savefig(f"render-{progressive_iters * spppp}spp.png")
@@ -383,7 +392,7 @@ class Scene(object):
 
 
 if __name__ == "__main__":
-    enabled_tests = [True, True, True, True]
+    enabled_tests = [False, True, False, False]
 
     #########################################################################
     # Deliverable 1 TESTS Eye Ray Anti Aliasing and Progressive Rendering
@@ -391,7 +400,7 @@ if __name__ == "__main__":
     if enabled_tests[0]:
         # Create test scene and test sphere
         # DEBUG: use a lower resolution to debug
-        scene = Scene(w=int(1024 / 4), h=int(768 / 4))
+        scene = Scene(w=int(200 / 4), h=int(100 / 4))
         scene.set_camera_parameters(
             eye=np.array([2, 0.5, -5], dtype=np.float64),
             at=normalize(np.array([0, 0, 1], dtype=np.float64)),
@@ -417,7 +426,7 @@ if __name__ == "__main__":
     if enabled_tests[1]:
         # Create test scene and test sphere
         # DEBUG: use a lower resolution to debug
-        scene = Scene(w=int(1024 / 4), h=int(768 / 4))
+        scene = Scene(w=int(200 / 4), h=int(100 / 4))
         scene.set_camera_parameters(
             eye=np.array([2, 0.5, -5], dtype=np.float64),
             at=normalize(np.array([0, 0, 1], dtype=np.float64)),
@@ -482,7 +491,7 @@ if __name__ == "__main__":
             up=np.array([0, 1, 0], dtype=np.float64),
             fov=60
         )
-        sphere = Sphere(1000, np.array([0, -1002.5, 0]),
+        sphere = Sphere(10, np.array([0, -1002.5, 0]),
                         brdf_params=np.array([0.9, 0.9, 0.9]))
         scene.add_geometries([sphere])
 
