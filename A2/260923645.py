@@ -151,43 +151,26 @@ class Mesh(Geometry):
         self.brdf_params = brdf_params
         # BEGIN SOLUTION
         # [TODO] replace the next line with your code for Phong normal interpolation
-        self.face_normals = per_face_normals(self.v, self.f, unit_norm = True)
-        self.per_vectex_normals = per_vertex_normals(self.v, self.f)
+        self.face_normals = per_face_normals(self.v, self.f, unit_norm=True)
+        self.per_vectex_normals = per_vertex_normals(
+            self.v, self.f)
         # END SOLUTION
         super().__init__()
 
     def intersect(self, rays):
-        def phong_normal_interpolation(ray_direction, ray_origin):
-            ray_direction = ray_direction.reshape((1,3))
-            ray_origin = ray_origin.reshape((1,3))
-            inf_distance = np.inf
-            inf_normal = np.array([np.inf, np.inf, np.inf])
 
-            hit_distance, triangle_hit_id, bary = ray_mesh_intersect(ray_direction, ray_origin, self.v, self.f, use_embree=True)
-            if hit_distance == np.inf:
-                return (inf_distance, inf_normal)
-            else:
-                alpha, beta, gamma = bary[0], bary[1], bary[2]
-                hit_normal = alpha*self.per_vectex_normals[self.f[triangle_hit_id][0]] + beta*self.per_vectex_normals[self.f[triangle_hit_id][1]]+gamma*self.per_vectex_normals[self.f[triangle_hit_id][2]]
-                return (hit_distance, hit_normal)
+        hit_normals = np.tile(
+            np.array([np.inf, np.inf, np.inf]), (len(rays.Os), 1))
+        hit_distances, triangle_hit_ids, barys = ray_mesh_intersect(
+            rays.Os, rays.Ds, self.v, self.f, use_embree=True)
+        indexes_to_update = np.array(np.where(triangle_hit_ids != -1)[0])
+        for index in indexes_to_update:
+            hit_normals[index] = barys[index][0]*self.per_vectex_normals[self.f[triangle_hit_ids[index]][0]] + barys[index][1] * \
+                self.per_vectex_normals[self.f[triangle_hit_ids[index]][1]] + \
+                barys[index][2] * \
+                self.per_vectex_normals[self.f[triangle_hit_ids[index]][2]]
 
-        phong_normal_interpolation_vectorized =  np.vectorize( phong_normal_interpolation, signature='(d),(d)->(),(d)')
-        result = phong_normal_interpolation_vectorized(rays.Ds, rays.Os)
-        return result
-
-        normal[i]=barys[i][0]*N[self.f[triangle_hit_ids[i]][0]]+barys[i][1]
-            
-        # BEGIN SOLUTION
-
-        # #temp_normals = self.phong_interpolated_normal[triangle_hit_ids]
-        # # END SOLUTION
-
-        # temp_normals = np.where((triangle_hit_ids == -1)[:, np.newaxis],
-        #                         hit_normals,
-        #                         temp_normals)
-        # hit_normals = temp_normals
-
-        # return hit_distances, hit_normals
+        return hit_distances, hit_normals
 
 
 # Enumerate the different importance sampling strategies we will implement
@@ -297,53 +280,31 @@ class Scene(object):
         Intersects a bundle of ray with the objects in the scene.
         Returns a tuple of hit information - hit_distances, hit_normals, hit_ids.
         """
-        # print("inside intersect")
-        # print(rays.Os.shape)
-        # print(rays.Ds.shape)
 
         # BEGIN SOLUTION
         # Instead of self.spheres, use self.geometries. Normals are already calculated.
-        hit_ids = []
-        hit_distances = []
-        hit_normals = []
-        global min_distance
-        min_distance = np.inf
-        global idx
-        idx = -1
-        global normal
-        normal = np.array([np.inf, np.inf, np.inf])
 
-        def check_for_geometry_hit(index):
-            global min_distance
-            global idx
-            global normal
-            min_distance = np.inf
-            idx = -1
-            normal = np.array([np.inf, np.inf, np.inf])
-            direction, origin = rays.Ds[index], rays.Os[index]
-            for geo_idx in range(len(self.geometries)):
-                geometry = self.geometries[geo_idx]
-                result = geometry.intersect(
-                    Rays(np.array([origin]), np.array([direction])))
-                distance = result[0]
-                if distance < min_distance:
-                    min_distance = distance
-                    idx = geo_idx
-                    normal = result[1][0]
-            return np.array([min_distance, np.array(normal), idx])
+        # for each ray, we want the normal and geo_idx of the smallest distance
+        hit_distances = np.tile(np.inf, len(rays.Os))
+        hit_normals = np.tile(
+            np.array([np.inf, np.inf, np.inf]), (len(rays.Os), 1))
+        hit_ids = np.tile(-1, len(rays.Os))
 
-        indexes = np.arange(len(rays.Ds))
-        result = np.array(list(map(check_for_geometry_hit, indexes))).T
-        result = result.tolist()
-        hit_distances, hit_normals, hit_ids = np.array(
-            result[0]), np.array(result[1]), np.array(result[2])
+        for geo_idx in range(len(self.geometries)):
+            geometry = self.geometries[geo_idx]
+            result = geometry.intersect(rays)
+            distances, normals = result[0], result[1]
+            indexes_to_update = np.array(
+                np.where(distances < hit_distances)[0])
+            hit_distances = np.where(
+                distances < hit_distances, distances, hit_distances)
+            for index in indexes_to_update:
+                hit_normals[index] = normals[index]
+                hit_ids[index] = geo_idx
         return hit_distances, hit_normals, hit_ids
         # END SOLUTION
 
     def render(self, eye_rays, sampling_type=UNIFORM_SAMPLING, num_samples=1):
-        # print("inside render")
-        # print(eye_rays.Os.shape)
-        # print(eye_rays.Ds.shape)
         shadow_ray_o_offset = 1e-6
 
         # vectorized primary visibility test
@@ -394,8 +355,6 @@ class Scene(object):
 
         for i in range(progressive_iters):
             vectorized_eye_rays = self.generate_eye_rays(jitter)
-            # print(vectorized_eye_rays.Os.shape)
-            # print(vectorized_eye_rays.Ds.shape)
             L -= L/(i+1)
             L += self.render(vectorized_eye_rays, sampling_type, spppp)/(i+1)
             image_data.set_data(L)
@@ -417,6 +376,7 @@ class Scene(object):
 
 if __name__ == "__main__":
     enabled_tests = [False, True, False, False]
+    open("./bunny-446.obj")
 
     #########################################################################
     # Deliverable 1 TESTS Eye Ray Anti Aliasing and Progressive Rendering
@@ -450,7 +410,7 @@ if __name__ == "__main__":
     if enabled_tests[1]:
         # Create test scene and test sphere
         # DEBUG: use a lower resolution to debug
-        scene = Scene(w=int(1024 / 4), h=int(768 / 4))
+        scene = Scene(w=int(200 / 4), h=int(100 / 4))
         scene.set_camera_parameters(
             eye=np.array([2, 0.5, -5], dtype=np.float64),
             at=normalize(np.array([0, 0, 1], dtype=np.float64)),
