@@ -284,7 +284,6 @@ class Scene(object):
         # BEGIN SOLUTION
         # Instead of self.spheres, use self.geometries. Normals are already calculated.
 
-        # for each ray, we want the normal and geo_idx of the smallest distance
         hit_distances = np.tile(np.inf, len(rays.Os))
         hit_normals = np.tile(
             np.array([np.inf, np.inf, np.inf]), (len(rays.Os), 1))
@@ -350,7 +349,6 @@ class Scene(object):
         progressive_iters = int(np.ceil(total_spp / spppp))
 
         # BEGIN SOLUTION
-        # [TODO] replace the next five lines with
         # your progressive rendering display loop
 
         for i in range(progressive_iters):
@@ -360,14 +358,6 @@ class Scene(object):
             image_data.set_data(L)
             plt.pause(0.001)
 
-        # print(L)
-        # call image_data.set_data(averaged_L)
-
-        # vectorized_eye_rays = self.generate_eye_rays(jitter)
-        # plt.title(f"current spp: {1 * spppp} of {1 * spppp}")
-        # L = self.render(vectorized_eye_rays, sampling_type, spppp)
-        # image_data.set_data(L)
-        # plt.pause(0.001)  # add a tiny delay between rendering passes
         # END SOLUTION
 
         plt.savefig(f"render-{progressive_iters * spppp}spp.png")
@@ -375,7 +365,7 @@ class Scene(object):
 
 
 if __name__ == "__main__":
-    enabled_tests = [False, True, False, False]
+    enabled_tests = [True, True, False, False]
     open("./bunny-446.obj")
 
     #########################################################################
