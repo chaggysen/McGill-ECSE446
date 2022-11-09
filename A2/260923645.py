@@ -164,11 +164,16 @@ class Mesh(Geometry):
         hit_distances, triangle_hit_ids, barys = ray_mesh_intersect(
             rays.Os, rays.Ds, self.v, self.f, use_embree=True)
         indexes_to_update = np.array(np.where(triangle_hit_ids != -1)[0])
-        for index in indexes_to_update:
-            hit_normals[index] = barys[index][0]*self.per_vectex_normals[self.f[triangle_hit_ids[index]][0]] + barys[index][1] * \
-                self.per_vectex_normals[self.f[triangle_hit_ids[index]][1]] + \
-                barys[index][2] * \
-                self.per_vectex_normals[self.f[triangle_hit_ids[index]][2]]
+
+        if len(rays.Os) == 1:
+            hit_distances = np.array([hit_distances])
+
+        if len(hit_normals) > 1:
+            for index in indexes_to_update:
+                hit_normals[index] = barys[index][0]*self.per_vectex_normals[self.f[triangle_hit_ids[index]][0]] + barys[index][1] * \
+                    self.per_vectex_normals[self.f[triangle_hit_ids[index]][1]] + \
+                    barys[index][2] * \
+                    self.per_vectex_normals[self.f[triangle_hit_ids[index]][2]]
 
         return hit_distances, hit_normals
 
@@ -318,16 +323,40 @@ class Scene(object):
         brdf_params = np.array(
             [obj.brdf_params for obj in self.geometries])[ids]
 
+        # print(len(brdf_params))
+
         # initialize the output "image" (i.e., vector; still needs to be reshaped)
         L = np.zeros(normals.shape, dtype=np.float64)
 
         # BEGIN SOLUTION
-        # PLACEHOLDER: our base code renders out normals,
-        # which are useful for the first two deliverables.
-        # [TODO] Replace these next three lines with your
-        # solution for deliverables 3 (and 4, for ECSE 546 students)
-        L = np.abs(normals)
+        Ws = []
+        for _ in range(len(eye_rays.Os)):
+            sigma1 = np.random.rand()
+            sigma2 = np.random.rand()
+            wz = 2*sigma1 - 1
+            r = math.sqrt(1 - wz ** 2)
+            theta = 2*math.pi*sigma2
+            wx = r*math.cos(theta)
+            wy = r*math.sin(theta)
+            Ws.append([wx, wy, wz])
+
+        for idx in range(len(hit_points)):
+            constant = (2*brdf_params[idx])/num_samples
+            sum_value = 0
+            for i in range(num_samples):
+                X = hit_points[idx] + shadow_ray_o_offset*normals[idx]
+                wi = Ws[idx]
+                shadow_ray = Rays(np.array([X]), np.array([wi]))
+                visibility = 1
+                for geometry in self.geometries:
+                    hit_distances, hit_normals = geometry.intersect(shadow_ray)
+                    if hit_distances[0] != np.inf:
+                        visibility -= 1
+                        break
+                sum_value += visibility*max(0, np.dot(normals[idx], Ws[idx]))
+            L[idx] = constant * sum_value
         L = L.reshape((self.h, self.w, 3))
+
         return L
         # END SOLUTION
 
@@ -354,9 +383,11 @@ class Scene(object):
         for i in range(progressive_iters):
             vectorized_eye_rays = self.generate_eye_rays(jitter)
             L -= L/(i+1)
-            L += self.render(vectorized_eye_rays, sampling_type, spppp)/(i+1)
+            L += self.render(vectorized_eye_rays,
+                             sampling_type, spppp)/(i+1)
             image_data.set_data(L)
             plt.pause(0.001)
+            plt.title(f"current spp: {spppp * i} of {1 * progressive_iters}")
 
         # END SOLUTION
 
@@ -365,7 +396,7 @@ class Scene(object):
 
 
 if __name__ == "__main__":
-    enabled_tests = [True, True, False, False]
+    enabled_tests = [False, False, True, False]
     open("./bunny-446.obj")
 
     #########################################################################
@@ -423,7 +454,7 @@ if __name__ == "__main__":
     if enabled_tests[2]:
         # Create test scene and test sphere
         # DEBUG: use a lower resolution to debug
-        scene = Scene(w=int(1024 / 4), h=int(768 / 4))
+        scene = Scene(w=int(200 / 4), h=int(100 / 4))
         scene.set_camera_parameters(
             eye=np.array([2, 0.5, -5], dtype=np.float64),
             at=normalize(np.array([0, 0, 1], dtype=np.float64)),
@@ -435,12 +466,12 @@ if __name__ == "__main__":
         scene.add_geometries([sphere])
 
         # DEBUG: start with a simpler scene before replacing your spherical bunny with an actual bunny
-        bunny_sphere = Sphere(1.5, np.array([0.5, -0.5, 0]),
-                              brdf_params=np.array([0.9, 0.9, 0.9]))
-        scene.add_geometries([bunny_sphere])
-        # bunny = Mesh("bunny-446.obj",
-        #              brdf_params=np.array([0.9, 0.9, 0.9]))
-        # scene.add_geometries([bunny])
+        # bunny_sphere = Sphere(1.5, np.array([0.5, -0.5, 0]),
+        #                       brdf_params=np.array([0.9, 0.9, 0.9]))
+        # scene.add_geometries([bunny_sphere])
+        bunny = Mesh("bunny-446.obj",
+                     brdf_params=np.array([0.9, 0.9, 0.9]))
+        scene.add_geometries([bunny])
 
         scene.add_lights([
             {
