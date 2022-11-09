@@ -22,6 +22,14 @@ def normalize(v):
         return v
     return v / norm
 
+def normalize2D(vs):
+    """
+    Returns the normalized vector given vector v.
+    Note - This function is only for normalizing 1D vectors instead of batched 2D vectors.
+    """
+    norm = np.linalg.norm(vs, axis=1, keepdims=True)
+    return vs/norm
+
 
 # ray bundles
 class Rays(object):
@@ -94,12 +102,49 @@ class Sphere(Geometry):
         intersection distances (set to np.inf if none), and unit hit
         normals (set to [np.inf, np.inf, np.inf] if none.)
         """
-        # distances = np.zeros((rays.Os.shape[0],), dtype=np.float64)
-        # distances[:] = np.inf
-        # normals = np.zeros(rays.Os.shape, dtype=np.float64)
-        # normals[:, :] = np.array([np.inf, np.inf, np.inf])
+        hit_distances = np.zeros((rays.Os.shape[0],), dtype=np.float64)
+        hit_distances[:] = np.inf
+        hit_normals = np.zeros(rays.Os.shape, dtype=np.float64)
+        hit_normals[:, :] = np.array([np.inf, np.inf, np.inf])
 
         # BEGIN SOLUTION
+        sphere_center, sphere_radius = self.c, self.r
+        ray_directions, ray_origins = rays.Ds, rays.Os
+        #As = np.dot(normalize2D(ray_directions), normalize2D(ray_directions).T).diagonal()
+        As = np.sum(ray_directions*ray_directions, axis=1)
+        # Bs = 2.0 * np.dot(ray_directions, (ray_origins - sphere_center).T).diagonal()
+        Bs = 2.0 * np.sum(ray_directions*(ray_origins - sphere_center), axis=1)
+        # Cs = np.dot((ray_origins - sphere_center),
+        #             (ray_origins - sphere_center).T).diagonal() - (sphere_radius**2)
+        Cs = np.sum((ray_origins - sphere_center)*(ray_origins - sphere_center), axis=1) - (sphere_radius**2)
+        discriminents = Bs**2 - (4*As*Cs)
+
+        # update distances
+        # check discriminent == 0
+        distances = (-Bs/(2*As))
+        hit_distances = np.where(discriminents == 0, distances, hit_distances)
+
+        # check discriminent > 0
+        t1s = (-Bs + np.sqrt(discriminents)) / (2*As)
+        t2s = (-Bs - np.sqrt(discriminents)) / (2*As)
+        min_distances = np.minimum(t1s, t2s)
+        hit_distances = np.where(discriminents > 0, min_distances, hit_distances)
+
+        # check distance > epsilon_sphere
+        hit_distances = np.where(hit_distances > self.EPSILON_SPHERE, hit_distances, np.inf)
+        
+        # update normals
+        hit_distances_transpose = np.array([hit_distances]).T
+        point_hits = ray_origins + ray_directions*hit_distances_transpose
+        indexes_to_update_discriminent = np.array(np.where(discriminents >= 0))
+        indexes_to_update_epsilon = np.where(hit_distances <= self.EPSILON_SPHERE)
+        hit_normals[indexes_to_update_discriminent] = normalize2D(point_hits[indexes_to_update_discriminent] - sphere_center)
+        hit_normals[indexes_to_update_epsilon] = np.array([np.inf, np.inf, np.inf])
+
+        return hit_distances, hit_normals
+
+
+        # Vectorize: remove function, do all operations on all rays
 
         def quadratic(ray_direction, ray_origin):
             inf_distance = np.inf
@@ -111,6 +156,8 @@ class Sphere(Geometry):
             c = np.dot((ray_origin - sphere_center),
                        (ray_origin - sphere_center)) - (sphere_radius**2)
             discriminent = b**2 - (4*a*c)
+
+            # use np.where
             if discriminent < 0:
                 result = (inf_distance, inf_normal)
             elif discriminent == 0:
@@ -139,6 +186,7 @@ class Sphere(Geometry):
         # same number of direction and origins
 
         result = quadratic_vectorized(rays.Ds, rays.Os)
+        print(result[0])
         return result
 
         # END SOLUTION
@@ -159,6 +207,7 @@ class Mesh(Geometry):
 
     def intersect(self, rays):
 
+        # when u use index
         hit_normals = np.tile(
             np.array([np.inf, np.inf, np.inf]), (len(rays.Os), 1))
         hit_distances, triangle_hit_ids, barys = ray_mesh_intersect(
@@ -167,6 +216,8 @@ class Mesh(Geometry):
 
         if len(rays.Os) == 1:
             hit_distances = np.array([hit_distances])
+
+        # hitnormals = barys[...0]*self.per_vectex_normals[self.f[triangle_hit_ids]....0]
 
         if len(hit_normals) > 1:
             for index in indexes_to_update:
@@ -252,7 +303,7 @@ class Scene(object):
             ray_direction = np.dot(cameraToWorld, np.array(
                 [XX_flat, YY_flat, np.ones(size), np.zeros(size)]))
             ray_direction = ray_direction[:3].T
-            ray_direction = list(map(normalize, ray_direction))
+            ray_direction = list(map(normalize, ray_direction)) # change
             return Rays(np.tile(ray_origin, (len(ray_direction), 1)), np.array(ray_direction))
 
         else:
@@ -298,13 +349,10 @@ class Scene(object):
             geometry = self.geometries[geo_idx]
             result = geometry.intersect(rays)
             distances, normals = result[0], result[1]
-            indexes_to_update = np.array(
-                np.where(distances < hit_distances)[0])
+            hit_normals = np.where((distances < hit_distances)[..., None], normals, hit_normals)
+            hit_ids = np.where((distances < hit_distances), geo_idx, hit_ids)
             hit_distances = np.where(
                 distances < hit_distances, distances, hit_distances)
-            for index in indexes_to_update:
-                hit_normals[index] = normals[index]
-                hit_ids[index] = geo_idx
         return hit_distances, hit_normals, hit_ids
         # END SOLUTION
 
@@ -323,36 +371,39 @@ class Scene(object):
         brdf_params = np.array(
             [obj.brdf_params for obj in self.geometries])[ids]
 
-        # print(len(brdf_params))
-
         # initialize the output "image" (i.e., vector; still needs to be reshaped)
         L = np.zeros(normals.shape, dtype=np.float64)
 
-        # BEGIN SOLUTION
-        Ws = []
-        for _ in range(len(eye_rays.Os)):
-            sigma1 = np.random.rand()
-            sigma2 = np.random.rand()
-            wz = 2*sigma1 - 1
-            r = math.sqrt(1 - wz ** 2)
-            theta = 2*math.pi*sigma2
-            wx = r*math.cos(theta)
-            wy = r*math.sin(theta)
-            Ws.append([wx, wy, wz])
+        sigma1s = np.random.rand(len(eye_rays.Os))
+        sigma2s = np.random.rand(len(eye_rays.Os))
+        wzs = 2*sigma1s - 1
+        rs = np.sqrt(-np.power(wzs, 2) + 1)
+        thetas = 2*math.pi*sigma2s
+        wxs = rs*np.cos(thetas)
+        wys = rs*np.sin(thetas)
+        Ws = np.stack((wxs, wys, wzs), axis=1)
 
+        # cant do this, lights > num_samples
         for idx in range(len(hit_points)):
             constant = (2*brdf_params[idx])/num_samples
             sum_value = 0
+            # this is ok
             for i in range(num_samples):
                 X = hit_points[idx] + shadow_ray_o_offset*normals[idx]
                 wi = Ws[idx]
                 shadow_ray = Rays(np.array([X]), np.array([wi]))
                 visibility = 1
+                # this is ok
                 for geometry in self.geometries:
                     hit_distances, hit_normals = geometry.intersect(shadow_ray)
                     if hit_distances[0] != np.inf:
                         visibility -= 1
                         break
+                # hit_distances, hit_normals, hit_ids = self.intersect() # do on all shadow rays
+                # use np.where to check != np.inp, 
+                # visibility = np.where(hit_distances != np.inf, 0, 1)
+                # normals[ids!=-1]
+                # sums[ids!=-1]=....
                 sum_value += visibility*max(0, np.dot(normals[idx], Ws[idx]))
             L[idx] = constant * sum_value
         L = L.reshape((self.h, self.w, 3))
