@@ -103,6 +103,8 @@ class Sphere(Geometry):
         intersection distances (set to np.inf if none), and unit hit
         normals (set to [np.inf, np.inf, np.inf] if none.)
         """
+
+        # initialize hit_distances and hit_normals
         hit_distances = np.zeros((rays.Os.shape[0],), dtype=np.float64)
         hit_distances[:] = np.inf
         hit_normals = np.zeros(rays.Os.shape, dtype=np.float64)
@@ -111,29 +113,29 @@ class Sphere(Geometry):
         # BEGIN SOLUTION
         sphere_center, sphere_radius = self.c, self.r
         ray_directions, ray_origins = rays.Ds, rays.Os
+
+        # calculate As, Bs, Cs and discrimiments
         As = np.sum(ray_directions*ray_directions, axis=1)
         Bs = 2.0 * np.sum(ray_directions*(ray_origins - sphere_center), axis=1)
         Cs = np.sum((ray_origins - sphere_center)*(ray_origins -
                                                    sphere_center), axis=1) - (sphere_radius**2)
         discriminents = Bs**2 - (4*As*Cs)
 
-        # update distances
-        # check discriminent= 0 =
+        # UPDATE DISTANCES
+        # check discriminent == 0
         distances = (-Bs/(2*As))
         hit_distances = np.where(discriminents == 0, distances, hit_distances)
-
         # check discriminent > 0
         t1s = (-Bs + np.sqrt(discriminents)) / (2*As)
         t2s = (-Bs - np.sqrt(discriminents)) / (2*As)
         min_distances = np.minimum(t1s, t2s)
         hit_distances = np.where(
             discriminents > 0, min_distances, hit_distances)
-
         # check distance > epsilon_sphere
         hit_distances = np.where(
             hit_distances > self.EPSILON_SPHERE, hit_distances, np.inf)
 
-        # update normals
+        # UPDATE NORMALS
         hit_distances_transpose = np.array([hit_distances]).T
         point_hits = ray_origins + ray_directions*hit_distances_transpose
         hit_normals[hit_distances != np.inf] = normalize2D(
@@ -158,17 +160,21 @@ class Mesh(Geometry):
 
     def intersect(self, rays):
 
-        # when u use index
+        # initialize hit_distances and hit_normals
         hit_normals = np.tile(
             np.array([np.inf, np.inf, np.inf]), (len(rays.Os), 1))
         hit_distances, triangle_hit_ids, barys = ray_mesh_intersect(
             rays.Os, rays.Ds, self.v, self.f, use_embree=True)
+
+        # find indexes to update
         indexes_to_update = np.array(np.where(triangle_hit_ids != -1)[0])
 
+        # calculate aphas, betas and gammas
         alphas = np.array([barys[indexes_to_update][:, 0]]).T
         betas = np.array([barys[indexes_to_update][:, 1]]).T
         gammas = np.array([barys[indexes_to_update][:, 2]]).T
 
+        # update hit_normals on indexes_to_update
         hit_normals[indexes_to_update] = alphas*self.per_vectex_normals[self.f[triangle_hit_ids[indexes_to_update]][:, 0]] + betas * \
             self.per_vectex_normals[self.f[triangle_hit_ids[indexes_to_update]][:, 1]] + \
             gammas * \
@@ -222,55 +228,31 @@ class Scene(object):
         pixel into the scene.
         """
 
-        if jitter:
-            image_ratio = self.w / self.h
-            scale = math.tan(math.radians(self.fov * 0.5))
-            zc = normalize(self.at - self.eye)
-            ray_origin = self.eye
-            x_axis = np.cross(self.up, zc)
-            y_axis = np.cross(zc, x_axis)
-            cameraToWorld = np.array([
-                [x_axis[0], y_axis[0], zc[0], self.eye[0]],
-                [x_axis[1], y_axis[1], zc[1], self.eye[1]],
-                [x_axis[2], y_axis[2], zc[2], self.eye[2]],
-                [0, 0, 0, 1]
-            ])
-            # the 0.5 can be anything between 0 and 1
-            x = (2 * (np.arange(self.w) + random.uniform(0, 1)) /
-                 self.w - 1) * image_ratio * scale
-            y = (1 - 2 * (np.arange(self.h) + random.uniform(0, 1)) / self.h) * scale
-            XX, YY = np.meshgrid(x, y)
-            XX_flat, YY_flat, size = XX.flatten(), YY.flatten(), XX.size
-            ray_direction = np.dot(cameraToWorld, np.array(
-                [XX_flat, YY_flat, np.ones(size), np.zeros(size)]))
-            ray_direction = ray_direction[:3].T
-            ray_direction = list(map(normalize, ray_direction))  # change
-            return Rays(np.tile(ray_origin, (len(ray_direction), 1)), np.array(ray_direction))
-
-        else:
-            image_ratio = self.w / self.h
-            scale = math.tan(math.radians(self.fov * 0.5))
-            zc = normalize(self.at - self.eye)
-            ray_origin = self.eye
-            x_axis = np.cross(self.up, zc)
-            y_axis = np.cross(zc, x_axis)
-            cameraToWorld = np.array([
-                [x_axis[0], y_axis[0], zc[0], self.eye[0]],
-                [x_axis[1], y_axis[1], zc[1], self.eye[1]],
-                [x_axis[2], y_axis[2], zc[2], self.eye[2]],
-                [0, 0, 0, 1]
-            ])
-            x = (2 * (np.arange(self.w) + 0.5) /
-                 self.w - 1) * image_ratio * scale
-            y = (1 - 2 * (np.arange(self.h) + 0.5) / self.h) * scale
-            XX, YY = np.meshgrid(x, y)
-            XX_flat, YY_flat, size = XX.flatten(), YY.flatten(), XX.size
-            ray_direction = np.dot(cameraToWorld, np.array(
-                [XX_flat, YY_flat, np.ones(size), np.zeros(size)]))
-            ray_direction = ray_direction[:3].T
-            ray_direction = list(map(normalize, ray_direction))
-            return Rays(np.tile(ray_origin, (len(ray_direction), 1)), np.array(ray_direction))
-        # END SOLUTION
+        image_ratio = self.w / self.h
+        scale = math.tan(math.radians(self.fov * 0.5))
+        zc = normalize(self.at - self.eye)
+        ray_origin = self.eye
+        x_axis = np.cross(self.up, zc)
+        y_axis = np.cross(zc, x_axis)
+        cameraToWorld = np.array([
+            [x_axis[0], y_axis[0], zc[0], self.eye[0]],
+            [x_axis[1], y_axis[1], zc[1], self.eye[1]],
+            [x_axis[2], y_axis[2], zc[2], self.eye[2]],
+            [0, 0, 0, 1]
+        ])
+        # offset is assigned based on value of jitter
+        offset1 = random.uniform(0, 1) if jitter else 0.5
+        offset2 = random.uniform(0, 1) if jitter else 0.5
+        x = (2 * (np.arange(self.w) + offset1) /
+             self.w - 1) * image_ratio * scale
+        y = (1 - 2 * (np.arange(self.h) + offset2) / self.h) * scale
+        XX, YY = np.meshgrid(x, y)
+        XX_flat, YY_flat, size = XX.flatten(), YY.flatten(), XX.size
+        ray_direction = np.dot(cameraToWorld, np.array(
+            [XX_flat, YY_flat, np.ones(size), np.zeros(size)]))
+        ray_direction = ray_direction[:3].T
+        ray_direction = list(map(normalize, ray_direction))  # change
+        return Rays(np.tile(ray_origin, (len(ray_direction), 1)), np.array(ray_direction))
 
     def intersect(self, rays):
         """
@@ -279,7 +261,6 @@ class Scene(object):
         """
 
         # BEGIN SOLUTION
-        # Instead of self.spheres, use self.geometries. Normals are already calculated.
 
         hit_distances = np.tile(np.inf, len(rays.Os))
         hit_normals = np.tile(
@@ -316,6 +297,7 @@ class Scene(object):
         # initialize the output "image" (i.e., vector; still needs to be reshaped)
         L = np.zeros(normals.shape, dtype=np.float64)
 
+        # Generate random Ws
         sigma1s = np.random.rand(len(eye_rays.Os))
         sigma2s = np.random.rand(len(eye_rays.Os))
         wzs = 2*sigma1s - 1
@@ -325,13 +307,17 @@ class Scene(object):
         wys = rs*np.sin(thetas)
         Ws = np.stack((wxs, wys, wzs), axis=1)
 
+        # Calculate Mont-Carlo Estimator
         constants = (2*brdf_params)/num_samples
         Xs = hit_points + shadow_ray_o_offset*normals
+        # Create shadow_rays
         shadow_rays = Rays(Xs, Ws)
         hit_distances, hit_normals, hit_ids = self.intersect(shadow_rays)
+        # Set visibilities
         visibilities = np.zeros(len(eye_rays.Os))
         visibilities = np.where(hit_distances != np.inf, visibilities, 1)
 
+        # add values inside sum
         sum_values = np.zeros(len(eye_rays.Os))
         for _ in range(num_samples):
             product = np.sum(normals*Ws, axis=1)
