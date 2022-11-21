@@ -474,17 +474,11 @@ class Scene(object):
                 Bs = normalize2D(np.cross(Ws_2, As))
                 Cs = normalize2D(np.cross(As, Bs))
 
-                As_0 = As[:, 0]
-                Bs_0 = Bs[:, 0]
-                Cs_0 = Cs[:, 0]
+                As_0, Bs_0, Cs_0 = As[:, 0], Bs[:, 0], Cs[:, 0]
                 M_0 = np.stack((Cs_0, Bs_0, As_0), axis=1)
-                As_1 = As[:, 1]
-                Bs_1 = Bs[:, 1]
-                Cs_1 = Cs[:, 1]
+                As_1, Bs_1, Cs_1= As[:, 1], Bs[:, 1], Cs[:, 1]
                 M_1 = np.stack((Cs_1, Bs_1, As_1), axis=1)
-                As_2 = As[:, 2]
-                Bs_2 = Bs[:, 2]
-                Cs_2 = Cs[:, 2]
+                As_2, Bs_2, Cs_2 = As[:, 2], Bs[:, 2], Cs[:, 2]
                 M_2 = np.stack((Cs_2, Bs_2, As_2), axis=1)
 
                 Ms = np.stack((M_0, M_1, M_2), axis=1)
@@ -565,14 +559,14 @@ class Scene(object):
 
 if __name__ == "__main__":
     enabled_tests = [False, True, False]
-    # open("./plate1.obj")
-    # open("./plate2.obj")
-    # open("./plate3.obj")
-    # open("./plate4.obj")
-    # open("./floor.obj")
+    open("./plate1.obj")
+    open("./plate2.obj")
+    open("./plate3.obj")
+    open("./plate4.obj")
+    open("./floor.obj")
 
     # Create test scene and test sphere
-    scene = Scene(w=int(512), h=int(512))  # TODO: debug at lower resolution
+    scene = Scene(w=int(64), h=int(64))  # TODO: debug at lower resolution
     scene.set_camera_parameters(
         eye=np.array([0, 2, 15], dtype=np.float64),
         at=normalize(np.array([0, -2, 2.5], dtype=np.float64)),
