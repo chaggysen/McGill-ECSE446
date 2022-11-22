@@ -520,10 +520,29 @@ class Scene(object):
 
                 # update L
                 L += (Les*frs*maxes[:, np.newaxis])/p_light_w[..., None]
-
             L = np.where(np.logical_and(L_e != np.array(
                 [0, 0, 0]), (ids != -1)[:, np.newaxis]), L_e, L)
             L = L.reshape((self.h, self.w, 3))
+        
+        elif sampling_type == BRDF_SAMPLING:
+            for light in self.lights:
+
+                alphas = brdf_params[:, 3]
+
+                # generate Ws, canonical orientation
+
+                # calculate wos and wrs
+
+                # calculate p_brdf_w
+
+                # rotate Ws orientation
+
+                # calculate direct illumination
+
+                # update L
+
+
+                
 
         return L
         # END SOLUTION
