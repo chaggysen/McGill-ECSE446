@@ -520,22 +520,101 @@ class Scene(object):
 
                 # update L
                 L += (Les*frs*maxes[:, np.newaxis])/p_light_w[..., None]
+            L = np.where(np.logical_and(L_e != np.array(
+                [0, 0, 0]), (ids != -1)[:, np.newaxis]), L_e, L)
+            L = L.reshape((self.h, self.w, 3)) 
         
         elif sampling_type == BRDF_SAMPLING:
             alphas = brdf_params[:, 3]
+            reflectances = brdf_params[:, 0:3]
+
+            print("BRDF")
 
             # generate Ws, canonical orientation
+            sigma1s = np.random.rand(len(eye_rays.Os))
+            sigma2s = np.random.rand(len(eye_rays.Os))
+            wzs = np.power(sigma1s, (1/(alphas+1)))
+            rs = np.sqrt(-np.power(wzs, 2) + 1)
+            thetas = 2*math.pi*sigma2s
+            wxs = rs*np.cos(thetas)
+            wys = rs*np.sin(thetas)
+            Ws = np.stack((wxs, wys, wzs), axis=1)
 
             # calculate wos and wrs
+            wos = -eye_rays.Ds
+            wrs = 2*np.sum(normals*wos, axis=1)[:, np.newaxis]*normals-wos
 
             # rotate Ws orientation
+            sigma1s_2 = np.random.rand(len(eye_rays.Os))
+            sigma2s_2 = np.random.rand(len(eye_rays.Os))
+            wzs_2 = np.power(sigma1s_2, (1/(alphas+1)))
+            rs_2 = np.sqrt(-np.power(wzs_2, 2) + 1)
+            thetas_2 = 2*math.pi*sigma2s_2
+            wxs_2 = rs_2*np.cos(thetas_2)
+            wys_2 = rs_2*np.sin(thetas_2)
+            Ws_2 = np.stack((wxs_2, wys_2, wzs_2), axis=1)
+            
+            centers = np.zeros(shape=normals.shape)
+            centers = np.where((alphas == 1)[..., None], normals, centers)
+            centers = np.where((alphas > 1)[..., None], wrs, centers)
+            As = normalize2D(centers - hit_points)
+            Bs = normalize2D(np.cross(Ws_2, As))
+            Cs = normalize2D(np.cross(As, Bs))
+
+            As_0, Bs_0, Cs_0 = As[:, 0], Bs[:, 0], Cs[:, 0]
+            M_0 = np.stack((Cs_0, Bs_0, As_0), axis=1)
+            As_1, Bs_1, Cs_1= As[:, 1], Bs[:, 1], Cs[:, 1]
+            M_1 = np.stack((Cs_1, Bs_1, As_1), axis=1)
+            As_2, Bs_2, Cs_2 = As[:, 2], Bs[:, 2], Cs[:, 2]
+            M_2 = np.stack((Cs_2, Bs_2, As_2), axis=1)
+
+            Ms = np.stack((M_0, M_1, M_2), axis=1)
+            Ws = np.sum(Ms*Ws[:, None, :], axis=2)
 
             # calculate p_brdf_w
+            p_brdf_ws = np.zeros(shape=(len(ids),))
+
+            # diffuse
+            product_diffuse = np.sum(normals*Ws, axis=1)
+            product_diffuse = np.where(product_diffuse > 0, product_diffuse, 0)
+            product_diffuse = (1/math.pi)*product_diffuse
+            p_brdf_ws = np.where((alphas == 1), product_diffuse, p_brdf_ws)
+
+            # glossy Phong
+            product_phong = np.sum(wrs*Ws, axis=1)
+            product_phong = np.power(product_phong, alphas)
+            product_phong = np.where(product_phong > 0, product_phong, 0)
+            product_phong = ((alphas+1)/(2*math.pi))*product_phong
+            p_brdf_ws = np.where((alphas > 1), product_phong, p_brdf_ws)
+
+            # trace rays in the direction from Ws from hit_points
+            Xs = hit_points + shadow_ray_o_offset*normals
+            shadow_rays = Rays(Xs, Ws)
+
+            # since lights are geometries, check if intersect with lights
+            _, _, lights_ids = self.intersect(shadow_rays)
+
+            # create les
+            Les = np.concatenate((np.array([obj.Le for obj in self.geometries]), np.array(
+                [0, 0, 0])[np.newaxis, :]))[lights_ids]
 
             # calculate direct illumination
+            frs = np.tile(np.array([0, 0, 0]), (len(ids), 1))
+
+            diffuse_reflectances = reflectances/math.pi
+
+            product = (np.sum(wrs*Ws, axis=1))**alphas
+            product = np.where(product > 0, product, 0)
+            specular_reflectances = (
+                (reflectances * (alphas + 1)[:, np.newaxis]) / 2*math.pi) * product[:, np.newaxis]
+            frs = np.where((alphas == 1)[..., None], diffuse_reflectances, frs)
+            frs = np.where((alphas > 1)[..., None], specular_reflectances, frs)
+
+            maxes = np.sum(normals*Ws, axis=1)
+            maxes = np.where(maxes > 0, maxes, 0)
 
             # update L
-            
+            L += Les*frs*maxes[:, np.newaxis]/p_brdf_ws[..., None]
             L = np.where(np.logical_and(L_e != np.array(
                 [0, 0, 0]), (ids != -1)[:, np.newaxis]), L_e, L)
             L = L.reshape((self.h, self.w, 3))         
@@ -573,7 +652,7 @@ class Scene(object):
 
 
 if __name__ == "__main__":
-    enabled_tests = [False, True, False]
+    enabled_tests = [False, False, True, False]
     open("./plate1.obj")
     open("./plate2.obj")
     open("./plate3.obj")
@@ -581,7 +660,7 @@ if __name__ == "__main__":
     open("./floor.obj")
 
     # Create test scene and test sphere
-    scene = Scene(w=int(64), h=int(64))  # TODO: debug at lower resolution
+    scene = Scene(w=int(512), h=int(512))  # TODO: debug at lower resolution
     scene.set_camera_parameters(
         eye=np.array([0, 2, 15], dtype=np.float64),
         at=normalize(np.array([0, -2, 2.5], dtype=np.float64)),
@@ -635,10 +714,18 @@ if __name__ == "__main__":
         scene.progressive_render_display(
             total_spp=100, jitter=True, sampling_type=LIGHT_SAMPLING)
 
+    if enabled_tests[2]:
+        scene.progressive_render_display(
+            total_spp=1, jitter=True, sampling_type=BRDF_SAMPLING)
+        scene.progressive_render_display(
+            total_spp=10, jitter=True, sampling_type=BRDF_SAMPLING)
+        scene.progressive_render_display(
+            total_spp=100, jitter=True, sampling_type=BRDF_SAMPLING)
+
     #########################################################################
     # Deliverable 3 TEST (Only for ECSE 546 students!): comment/modify as you see fit
     #########################################################################
-    if enabled_tests[2]:
+    if enabled_tests[3]:
         scene.progressive_render_display(
             total_spp=1, jitter=True, sampling_type=MIS_SAMPLING)
         scene.progressive_render_display(
