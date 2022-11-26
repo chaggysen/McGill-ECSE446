@@ -476,7 +476,7 @@ class Scene(object):
 
                 As_0, Bs_0, Cs_0 = As[:, 0], Bs[:, 0], Cs[:, 0]
                 M_0 = np.stack((Cs_0, Bs_0, As_0), axis=1)
-                As_1, Bs_1, Cs_1= As[:, 1], Bs[:, 1], Cs[:, 1]
+                As_1, Bs_1, Cs_1 = As[:, 1], Bs[:, 1], Cs[:, 1]
                 M_1 = np.stack((Cs_1, Bs_1, As_1), axis=1)
                 As_2, Bs_2, Cs_2 = As[:, 2], Bs[:, 2], Cs[:, 2]
                 M_2 = np.stack((Cs_2, Bs_2, As_2), axis=1)
@@ -522,13 +522,11 @@ class Scene(object):
                 L += (Les*frs*maxes[:, np.newaxis])/p_light_w[..., None]
             L = np.where(np.logical_and(L_e != np.array(
                 [0, 0, 0]), (ids != -1)[:, np.newaxis]), L_e, L)
-            L = L.reshape((self.h, self.w, 3)) 
-        
+            L = L.reshape((self.h, self.w, 3))
+
         elif sampling_type == BRDF_SAMPLING:
             alphas = brdf_params[:, 3]
             reflectances = brdf_params[:, 0:3]
-
-            print("BRDF")
 
             # generate Ws, canonical orientation
             sigma1s = np.random.rand(len(eye_rays.Os))
@@ -553,17 +551,17 @@ class Scene(object):
             wxs_2 = rs_2*np.cos(thetas_2)
             wys_2 = rs_2*np.sin(thetas_2)
             Ws_2 = np.stack((wxs_2, wys_2, wzs_2), axis=1)
-            
+
             centers = np.zeros(shape=normals.shape)
             centers = np.where((alphas == 1)[..., None], normals, centers)
             centers = np.where((alphas > 1)[..., None], wrs, centers)
-            As = normalize2D(centers - hit_points)
+            As = normalize2D(centers)
             Bs = normalize2D(np.cross(Ws_2, As))
             Cs = normalize2D(np.cross(As, Bs))
 
             As_0, Bs_0, Cs_0 = As[:, 0], Bs[:, 0], Cs[:, 0]
             M_0 = np.stack((Cs_0, Bs_0, As_0), axis=1)
-            As_1, Bs_1, Cs_1= As[:, 1], Bs[:, 1], Cs[:, 1]
+            As_1, Bs_1, Cs_1 = As[:, 1], Bs[:, 1], Cs[:, 1]
             M_1 = np.stack((Cs_1, Bs_1, As_1), axis=1)
             As_2, Bs_2, Cs_2 = As[:, 2], Bs[:, 2], Cs[:, 2]
             M_2 = np.stack((Cs_2, Bs_2, As_2), axis=1)
@@ -617,7 +615,7 @@ class Scene(object):
             L += Les*frs*maxes[:, np.newaxis]/p_brdf_ws[..., None]
             L = np.where(np.logical_and(L_e != np.array(
                 [0, 0, 0]), (ids != -1)[:, np.newaxis]), L_e, L)
-            L = L.reshape((self.h, self.w, 3))         
+            L = L.reshape((self.h, self.w, 3))
 
         return L
         # END SOLUTION
@@ -652,7 +650,7 @@ class Scene(object):
 
 
 if __name__ == "__main__":
-    enabled_tests = [False, False, True, False]
+    enabled_tests = [False, True, True, False]
     open("./plate1.obj")
     open("./plate2.obj")
     open("./plate3.obj")
@@ -660,7 +658,7 @@ if __name__ == "__main__":
     open("./floor.obj")
 
     # Create test scene and test sphere
-    scene = Scene(w=int(512), h=int(512))  # TODO: debug at lower resolution
+    scene = Scene(w=int(64), h=int(64))  # TODO: debug at lower resolution
     scene.set_camera_parameters(
         eye=np.array([0, 2, 15], dtype=np.float64),
         at=normalize(np.array([0, -2, 2.5], dtype=np.float64)),
